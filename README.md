@@ -3,7 +3,40 @@
 This is the code block that represents the suggested code change:
 
 Note: The current code registers services directly; options binding may be added later.
+# StoryGeneratorConsole
 
+Interactive, console-based story generation with AI-assisted narration and optional image generation. Built on .NET 9 with dependency injection, typed logging, and a Spectre.Console UI.
+
+## Features
+- Guided premise creation, branching choices, and story continuation
+- Flow-based architecture:
+  - Description (premise)
+  - Begin (opening)
+  - Continue (next steps)
+  - Image (optional image for latest scene)
+- Console UI with panels, spinners, and prompts
+- Configurable via `appsettings.json` and environment variables
+
+## Requirements
+- .NET 9 SDK
+- (Optional) OpenAI API key for text generation
+- (Optional) Running ComfyUI instance for image generation
+
+## Quick start
+- dotnet --version
+- dotnet restore
+- dotnet run --project StoryGeneratorConsole.csproj
+
+## Visual Studio 2022:
+- Open the folder or `StoryGeneratorConsole.csproj`
+- Set `StoryGeneratorConsole` as startup project
+- Start debugging (F5)
+
+## Configuration
+The app loads `appsettings.json` and environment variables.
+
+Example `appsettings.json`:
+- 
 ## Usage
 - Answer the initial questions to refine the premise (or type `start` to begin).
 - Choose the next action from the list or type a custom action.
