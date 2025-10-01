@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "StoryGeneratorConsole": {
+      "commandName": "Project"
+    },
+    "Container (Dockerfile)": {
+      "commandName": "Docker"
+    }
+  }
+}
