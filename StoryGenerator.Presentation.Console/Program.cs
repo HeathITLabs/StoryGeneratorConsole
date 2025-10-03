@@ -3,10 +3,12 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
+//using Spectre.Console.ImageSharp;
 using StoryGenerator.AI.Services;
 using StoryGenerator.Core.Models;
 using StoryGeneratorConsole.StoryGenerator.Application;
 using StoryGeneratorConsole.StoryGenerator.Application.Flows;
+using System.Linq;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -48,6 +50,21 @@ static async Task RunAsync(IServiceProvider sp, ILogger logger)
 
     var engine = sp.GetRequiredService<IFlowEngine>();
     var sessions = sp.GetRequiredService<ISessionStore>();
+
+    // Ask once per session: preferred image style and optional theme
+    var imageStyle = AnsiConsole.Prompt(
+        new SelectionPrompt<string>()
+            .Title("Select an illustration [green]style[/]:")
+            .AddChoices(new[]
+            {
+                "Graphic Novel", "Watercolor", "Pixel Art", "Anime",
+                "Noir", "Oil Painting", "Isometric", "Low Poly",
+                "Realistic", "Cyberpunk"
+            }));
+
+    var imageTheme = AnsiConsole.Ask<string>(
+        "Optional [grey]theme/mood keywords[/] (e.g., 'dark fantasy, steampunk') [dim](leave blank to skip)[/]:",
+        "");
 
     var sessionId = Guid.NewGuid().ToString("N");
     var satisfied = false;
@@ -155,7 +172,13 @@ static async Task RunAsync(IServiceProvider sp, ILogger logger)
                     {
                         imageOut = await engine.ExecuteAsync<ImageGenerationInput, ImageGenerationOutput>(
                             "Image",
-                            new ImageGenerationInput { Story = latest!, SessionId = sessionId });
+                            new ImageGenerationInput
+                            {
+                                Story = latest!,
+                                SessionId = sessionId,
+                                Style = imageStyle,
+                                Theme = string.IsNullOrWhiteSpace(imageTheme) ? null : imageTheme
+                            });
                     });
 
                 AnsiConsole.MarkupLine($"[green]Image saved:[/] {imageOut.FilePath}");
