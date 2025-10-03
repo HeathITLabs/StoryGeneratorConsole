@@ -6,12 +6,14 @@ using StoryGenerator.Core.Models;
 using System.Text.Json;
 using System.ClientModel;
 using System.Threading;
+using System.Linq;
 
 // Add these aliases to avoid type name collisions
 using AIChatMessage = OpenAI.Chat.ChatMessage;
 using SystemChatMessage = OpenAI.Chat.SystemChatMessage;
 using UserChatMessage = OpenAI.Chat.UserChatMessage;
 using AssistantChatMessage = OpenAI.Chat.AssistantChatMessage;
+using CoreChatMessage = StoryGenerator.Core.Models.ChatMessage;
 
 namespace StoryGenerator.AI.Services
 {
@@ -24,7 +26,6 @@ namespace StoryGenerator.AI.Services
         public OpenAIService(IConfiguration configuration, ILogger<OpenAIService> logger)
         {
             _logger = logger;
-
             var apiKey = configuration["OpenAI:ApiKey"]
                 ?? throw new InvalidOperationException("OpenAI API key is required");
 
@@ -54,8 +55,8 @@ namespace StoryGenerator.AI.Services
         }
 
         public async Task<string> GenerateTextAsync(
-            List<ChatMessage> messages,
-            string model = "gpt-3.5-turbo",
+            List<CoreChatMessage> messages,
+            string model = "gemma3",
             int maxTokens = 2000,
             double temperature = 0.7)
         {
@@ -92,11 +93,11 @@ namespace StoryGenerator.AI.Services
 
         public async Task<string> GenerateCompletionAsync(
             string prompt,
-            string model = "gpt-3.5-turbo",
+            string model = "gemma3",
             int maxTokens = 2000,
             double temperature = 0.7)
         {
-            var messages = new List<ChatMessage>
+            var messages = new List<CoreChatMessage>
             {
                 new() { Role = "user", Content = prompt, Timestamp = DateTime.UtcNow }
             };
@@ -104,38 +105,56 @@ namespace StoryGenerator.AI.Services
         }
 
         public async Task<T> GenerateStructuredOutputAsync<T>(
-            List<ChatMessage> messages,
-            string model = "gpt-3.5-turbo")
+            List<CoreChatMessage> messages,
+            string model = "gemma3")
             where T : class
         {
             try
             {
                 // Add instruction to return JSON
-                var systemMessage = new ChatMessage
+                var systemMessage = new CoreChatMessage
                 {
                     Role = "system",
-                    Content = "You must respond with valid JSON that matches the required schema. Do not include any additional text, formatting, reasoning, or thinking content. Return ONLY the JSON object.",
+                    Content = "Respond with a single valid JSON object that matches the required schema. No extra text, no markdown/code fences, no comments.",
                     Timestamp = DateTime.UtcNow
                 };
 
-                var allMessages = new List<ChatMessage> { systemMessage };
+                var allMessages = new List<CoreChatMessage> { systemMessage };
                 allMessages.AddRange(messages);
 
-                var response = await GenerateTextAsync(allMessages, model, 2500, 0.2);
+                // Call chat without forcing response_format (SDK variant may not support it); rely on prompt + post-processing
+                var raw = await _retryStrategy.ExecuteAsync(async cancellationToken =>
+                {
+                    var chatMessages = allMessages.Select(MapToAIChatMessage).ToList();
 
-                // Try to parse the JSON response
+                    var options = new ChatCompletionOptions
+                    {
+                        Temperature = 0.2f,
+                        MaxTokens = 2500
+                    };
+
+                    var completion = await _client
+                        .GetChatClient(model)
+                        .CompleteChatAsync(chatMessages, options, cancellationToken);
+
+                    return completion.Value.Content.FirstOrDefault()?.Text ?? string.Empty;
+                });
+
+                // Strip any leftover fences just in case and deserialize
+                var json = ExtractJsonPayload(raw);
+
                 try
                 {
-                    return JsonSerializer.Deserialize<T>(response.Trim(), new JsonSerializerOptions
+                    return JsonSerializer.Deserialize<T>(json, new JsonSerializerOptions
                     {
                         PropertyNameCaseInsensitive = true
                     }) ?? throw new InvalidOperationException("Deserialization returned null");
                 }
                 catch (JsonException parseError)
                 {
-                    _logger.LogError(parseError, "Failed to parse JSON response: {Response}", response);
-                    // Try using enhanced JSON parser as fallback
-                    return ParsePartialJson<T>(response);
+                    _logger.LogError(parseError, "Failed to parse JSON response: {Response}", raw);
+                    // Fallback to tolerant parser
+                    return ParsePartialJson<T>(raw);
                 }
             }
             catch (Exception ex)
@@ -146,18 +165,18 @@ namespace StoryGenerator.AI.Services
         }
 
         public async Task<string> GenerateWithHistoryAsync(
-            List<ChatMessage> sessionMessages,
+            List<CoreChatMessage> sessionMessages,
             string newUserMessage,
             string? systemPrompt = null,
-            string model = "gpt-3.5-turbo",
+            string model = "gemma3",
             int maxTokens = 2000)
         {
-            var messages = new List<ChatMessage>();
+            var messages = new List<CoreChatMessage>();
 
             // Add system prompt if provided
             if (!string.IsNullOrEmpty(systemPrompt))
             {
-                messages.Add(new ChatMessage
+                messages.Add(new CoreChatMessage
                 {
                     Role = "system",
                     Content = systemPrompt,
@@ -169,7 +188,7 @@ namespace StoryGenerator.AI.Services
             messages.AddRange(sessionMessages);
 
             // Add new user message
-            messages.Add(new ChatMessage
+            messages.Add(new CoreChatMessage
             {
                 Role = "user",
                 Content = newUserMessage,
@@ -180,18 +199,18 @@ namespace StoryGenerator.AI.Services
         }
 
         public async Task<T> GenerateStructuredWithHistoryAsync<T>(
-            List<ChatMessage> sessionMessages,
+            List<CoreChatMessage> sessionMessages,
             string newUserMessage,
             string? systemPrompt = null,
-            string model = "gpt-3.5-turbo")
+            string model = "gemma3")
             where T : class
         {
-            var messages = new List<ChatMessage>();
+            var messages = new List<CoreChatMessage>();
 
             // Add system prompt if provided
             if (!string.IsNullOrEmpty(systemPrompt))
             {
-                messages.Add(new ChatMessage
+                messages.Add(new CoreChatMessage
                 {
                     Role = "system",
                     Content = systemPrompt,
@@ -203,7 +222,7 @@ namespace StoryGenerator.AI.Services
             messages.AddRange(sessionMessages);
 
             // Add new user message
-            messages.Add(new ChatMessage
+            messages.Add(new CoreChatMessage
             {
                 Role = "user",
                 Content = newUserMessage,
@@ -266,8 +285,67 @@ namespace StoryGenerator.AI.Services
             }
         }
 
+        // Strips ``` or ```json fences and extracts the first balanced JSON object/array.
+        private static string ExtractJsonPayload(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return raw;
+
+            var s = raw.Trim();
+
+            if (s.StartsWith("```", StringComparison.Ordinal))
+            {
+                var firstNl = s.IndexOf('\n');
+                if (firstNl >= 0) s = s[(firstNl + 1)..];
+
+                var lastFence = s.LastIndexOf("```", StringComparison.Ordinal);
+                if (lastFence >= 0) s = s[..lastFence];
+
+                return s.Trim();
+            }
+
+            int startObj = s.IndexOf('{');
+            int startArr = s.IndexOf('[');
+            int start = (startObj >= 0 && (startArr == -1 || startObj < startArr)) ? startObj : startArr;
+
+            if (start >= 0)
+            {
+                char open = s[start];
+                char close = open == '{' ? '}' : ']';
+                int depth = 0;
+                bool inString = false;
+                bool escape = false;
+
+                for (int i = start; i < s.Length; i++)
+                {
+                    char c = s[i];
+                    if (inString)
+                    {
+                        if (escape) escape = false;
+                        else if (c == '\\') escape = true;
+                        else if (c == '"') inString = false;
+                        continue;
+                    }
+
+                    if (c == '"') { inString = true; continue; }
+                    if (c == open) depth++;
+                    else if (c == close)
+                    {
+                        depth--;
+                        if (depth == 0)
+                        {
+                            return s.Substring(start, i - start + 1).Trim();
+                        }
+                    }
+                }
+
+                return s[start..].Trim();
+            }
+
+            return s;
+        }
+
         // Map your Core ChatMessage to the SDK ChatMessage
-        private static AIChatMessage MapToAIChatMessage(ChatMessage m)
+        private static AIChatMessage MapToAIChatMessage(CoreChatMessage m)
         {
             var role = (m.Role ?? string.Empty).Trim().ToLowerInvariant();
             var content = m.Content ?? string.Empty;
@@ -279,18 +357,5 @@ namespace StoryGenerator.AI.Services
                 _ => new UserChatMessage(content)
             };
         }
-
-        // Forward explicit interface implementations so DI callers using the interface work
-        Task<string> IOpenAIService.GenerateTextAsync(List<ChatMessage> messages, string model, int maxTokens, double temperature)
-            => GenerateTextAsync(messages, model, maxTokens, temperature);
-
-        Task<T> IOpenAIService.GenerateStructuredOutputAsync<T>(List<ChatMessage> messages, string model)
-            => GenerateStructuredOutputAsync<T>(messages, model);
-
-        Task<string> IOpenAIService.GenerateWithHistoryAsync(List<ChatMessage> sessionMessages, string newUserMessage, string? systemPrompt, string model, int maxTokens)
-            => GenerateWithHistoryAsync(sessionMessages, newUserMessage, systemPrompt, model, maxTokens);
-
-        Task<T> IOpenAIService.GenerateStructuredWithHistoryAsync<T>(List<ChatMessage> sessionMessages, string newUserMessage, string? systemPrompt, string model)
-            => GenerateStructuredWithHistoryAsync<T>(sessionMessages, newUserMessage, systemPrompt, model);
     }
 }

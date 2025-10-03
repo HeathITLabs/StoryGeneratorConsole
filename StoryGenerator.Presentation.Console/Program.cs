@@ -11,8 +11,7 @@ using StoryGeneratorConsole.StoryGenerator.Application.Flows;
 var builder = Host.CreateApplicationBuilder(args);
 
 // Configuration
-builder.Configuration.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
-                     .AddEnvironmentVariables();
+builder.Configuration.AddJsonFile("appsettings.json").AddEnvironmentVariables();
 
 // Logging
 builder.Services.AddLogging(b =>
