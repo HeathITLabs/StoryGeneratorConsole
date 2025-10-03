@@ -13,7 +13,7 @@ internal static class ConsoleUi
         AnsiConsole.Clear();
         ShowWelcome();
 
-        var engine = sp.GetRequiredService<IFlowEngine>();
+        var game = sp.GetRequiredService<IStoryGame>();
 
         // Ask once per session: preferred image style and optional theme
         var (imageStyle, imageTheme) = PromptImagePreferences();
@@ -21,15 +21,13 @@ internal static class ConsoleUi
         var sessionId = Guid.NewGuid().ToString("N");
 
         // Description phase
-        await RunDescriptionPhaseAsync(engine, sessionId);
+        await RunDescriptionPhaseAsync(game, sessionId);
 
         // Begin story
-        var begin = await ExecuteWithStatusAsync<BeginStoryFlowInput, BeginStoryFlowOutput>(
-            engine,
-            FlowNames.Begin,
-            new BeginStoryFlowInput { UserInput = "Begin the story.", SessionId = sessionId },
+        var begin = await ExecuteWithStatusAsync<BeginStoryFlowOutput>(
             "Starting story...",
-            Spinner.Known.Dots);
+            Spinner.Known.Dots,
+            () => game.BeginAsync(sessionId));
 
         RenderStory(begin.StoryParts, begin.PrimaryObjective, begin.Progress);
 
@@ -43,16 +41,14 @@ internal static class ConsoleUi
                         .Title("What should happen next?")
                         .AddChoices(begin.Options));
 
-                var cont = await ExecuteWithStatusAsync<ContinueStoryFlowInput, ContinueStoryFlowOutput>(
-                    engine,
-                    FlowNames.Continue,
-                    new ContinueStoryFlowInput { UserInput = choice, SessionId = sessionId },
+                var cont = await ExecuteWithStatusAsync<ContinueStoryFlowOutput>(
                     "Continuing story...",
-                    Spinner.Known.Dots);
+                    Spinner.Known.Dots,
+                    () => game.ContinueAsync(sessionId, choice));
 
                 RenderStory(cont.StoryParts, cont.PrimaryObjective, cont.Progress, cont.Rating);
 
-                await GenerateAndRenderImageAsync(engine, sessionId, cont.StoryParts.LastOrDefault(), imageStyle, imageTheme);
+                await GenerateAndRenderImageAsync(game, sessionId, cont.StoryParts.LastOrDefault(), imageStyle, imageTheme);
 
                 begin = ToBegin(cont);
 
@@ -66,12 +62,11 @@ internal static class ConsoleUi
             {
                 // No options; ask user directly
                 var free = AnsiConsole.Ask<string>("Describe the next action:");
-                var cont = await ExecuteWithStatusAsync<ContinueStoryFlowInput, ContinueStoryFlowOutput>(
-                    engine,
-                    FlowNames.Continue,
-                    new ContinueStoryFlowInput { UserInput = free, SessionId = sessionId },
+
+                var cont = await ExecuteWithStatusAsync<ContinueStoryFlowOutput>(
                     "Continuing...",
-                    Spinner.Known.Dots);
+                    Spinner.Known.Dots,
+                    () => game.ContinueAsync(sessionId, free));
 
                 RenderStory(cont.StoryParts, cont.PrimaryObjective, cont.Progress, cont.Rating);
 
@@ -110,23 +105,16 @@ internal static class ConsoleUi
         return (style, string.IsNullOrWhiteSpace(theme) ? null : theme);
     }
 
-    private static async Task RunDescriptionPhaseAsync(IFlowEngine engine, string sessionId)
+    private static async Task RunDescriptionPhaseAsync(IStoryGame game, string sessionId)
     {
         string? lastUser = null;
 
         while (true)
         {
-            var desc = await ExecuteWithStatusAsync<DescriptionFlowInput, DescriptionFlowOutput>(
-                engine,
-                FlowNames.Description,
-                new DescriptionFlowInput
-                {
-                    UserInput = lastUser,
-                    SessionId = sessionId,
-                    ClearSession = false
-                },
+            var desc = await ExecuteWithStatusAsync<DescriptionFlowOutput>(
                 "Thinking...",
-                Spinner.Known.Dots);
+                Spinner.Known.Dots,
+                () => game.GetPremiseAsync(sessionId, lastUser));
 
             AnsiConsole.Write(new Panel(desc.StoryPremise).Header("Story Premise").Border(BoxBorder.Double));
             AnsiConsole.MarkupLine($"[bold]Next:[/]: {desc.NextQuestion}");
@@ -180,7 +168,7 @@ internal static class ConsoleUi
     }
 
     private static async Task GenerateAndRenderImageAsync(
-        IFlowEngine engine,
+        IStoryGame game,
         string sessionId,
         string? latestStoryPart,
         string style,
@@ -189,48 +177,39 @@ internal static class ConsoleUi
         if (string.IsNullOrWhiteSpace(latestStoryPart))
             return;
 
-        var imageOut = await ExecuteWithStatusAsync<ImageGenerationInput, ImageGenerationOutput>(
-            engine,
-            FlowNames.Image,
-            new ImageGenerationInput
-            {
-                Story = latestStoryPart!,
-                SessionId = sessionId,
-                Style = style,
-                Theme = theme
-            },
+        var imageOut = await ExecuteWithStatusAsync<ImageGenerationOutput>(
             "Generating image...",
-            Spinner.Known.Earth);
+            Spinner.Known.Earth,
+            () => game.GenerateImageAsync(sessionId, latestStoryPart!, style, theme));
 
         AnsiConsole.MarkupLine($"[green]Image saved:[/] {imageOut.FilePath}");
-        RenderImageIfExists(imageOut.FilePath);
+        // Image rendering disabled (requires Spectre.Console.ImageSharp)
+        // RenderImageIfExists(imageOut.FilePath);
     }
 
-    private static void RenderImageIfExists(string path)
-    {
-        if (!System.IO.File.Exists(path))
-            return;
+    // private static void RenderImageIfExists(string path)
+    // {
+    //     if (!System.IO.File.Exists(path))
+    //         return;
+    //
+    //     var img = new CanvasImage(path)
+    //     {
+    //         MaxWidth = Math.Max(10, Math.Min(AnsiConsole.Profile.Width - 4, 100))
+    //     };
+    //     AnsiConsole.Write(img);
+    // }
 
-        var img = new CanvasImage(path)
-        {
-            MaxWidth = Math.Max(10, Math.Min(AnsiConsole.Profile.Width - 4, 100))
-        };
-        AnsiConsole.Write(img);
-    }
-
-    private static async Task<TOut> ExecuteWithStatusAsync<TIn, TOut>(
-        IFlowEngine engine,
-        string flowName,
-        TIn input,
+    private static async Task<T> ExecuteWithStatusAsync<T>(
         string statusMessage,
-        Spinner? spinner)
+        Spinner spinner,
+        Func<Task<T>> action)
     {
-        TOut? result = default!;
+        T? result = default!;
         await AnsiConsole.Status()
-            .Spinner(spinner ?? Spinner.Known.Dots)
+            .Spinner(spinner)
             .StartAsync(statusMessage, async _ =>
             {
-                result = await engine.ExecuteAsync<TIn, TOut>(flowName, input);
+                result = await action();
             });
         return result!;
     }

@@ -8,6 +8,7 @@ using StoryGenerator.AI.Services;
 using StoryGenerator.Core.Models;
 using StoryGeneratorConsole.StoryGenerator.Application;
 using StoryGeneratorConsole.StoryGenerator.Application.Flows;
+using StoryGenerator.Presentation.Console;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -37,6 +38,9 @@ builder.Services.AddTransient<ImageGenerationFlow>();
 
 // Engine
 builder.Services.AddSingleton<IFlowEngine, FlowEngine>();
+
+// UI-agnostic story service
+builder.Services.AddSingleton<IStoryGame, StoryGameService>();
 
 var app = builder.Build();
 
