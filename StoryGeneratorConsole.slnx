@@ -1,3 +1,4 @@
 <Solution>
+  <Project Path="StoryGenerator.Presentation.Discord/StoryGenerator.Presentation.Discord.csproj" Id="728fcff9-b25b-4216-bc62-3d7ea399b177" />
   <Project Path="StoryGeneratorConsole.csproj" />
 </Solution>

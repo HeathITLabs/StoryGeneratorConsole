@@ -17,7 +17,18 @@
     <None Include="StoryGenerator.Infrastructure.OpenAI\StoryModels.cs" />
   </ItemGroup>
 
+  <!-- Exclude the Discord project subtree from this project to avoid compiling nested project files and obj outputs -->
   <ItemGroup>
+    <Compile Remove="StoryGenerator.Presentation.Discord\**" />
+    <None Remove="StoryGenerator.Presentation.Discord\**" />
+    <EmbeddedResource Remove="StoryGenerator.Presentation.Discord\**" />
+    <Page Remove="StoryGenerator.Presentation.Discord\**" />
+    <Resource Remove="StoryGenerator.Presentation.Discord\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Discord.Net" Version="3.18.0" />
+    <PackageReference Include="Discord.Net.Interactions" Version="3.18.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.9" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.9" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.9" />

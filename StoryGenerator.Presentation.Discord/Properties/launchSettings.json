@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "StoryGenerator.Presentation.Discord": {
+      "commandName": "Project"
+    },
+    "Container (Dockerfile)": {
+      "commandName": "Docker"
+    }
+  }
+}
