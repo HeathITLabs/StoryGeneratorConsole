@@ -159,6 +159,17 @@ static async Task RunAsync(IServiceProvider sp, ILogger logger)
                     });
 
                 AnsiConsole.MarkupLine($"[green]Image saved:[/] {imageOut.FilePath}");
+
+                // Render the image as ANSI art (best in 24-bit color terminals)
+                if (System.IO.File.Exists(imageOut.FilePath))
+                {
+                    var img = new CanvasImage(imageOut.FilePath)
+                    {
+                        // Fit to console width; tweak as desired
+                        MaxWidth = Math.Max(10, Math.Min(AnsiConsole.Profile.Width - 4, 100))
+                    };
+                    AnsiConsole.Write(img);
+                }
             }
 
             begin = new BeginStoryFlowOutput

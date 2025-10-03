@@ -25,6 +25,7 @@
     <PackageReference Include="OpenAI" Version="2.5.0" />
     <PackageReference Include="Polly" Version="8.6.4" />
     <PackageReference Include="Spectre.Console" Version="0.51.1" />
+    <PackageReference Include="Spectre.Console.ImageSharp" Version="0.51.1" />
   </ItemGroup>
 
   <ItemGroup>
