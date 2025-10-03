@@ -1,10 +1,5 @@
 # StoryGeneratorConsole
 
-This is the code block that represents the suggested code change:
-
-Note: The current code registers services directly; options binding may be added later.
-# StoryGeneratorConsole
-
 Interactive, console-based story generation with AI-assisted narration and optional image generation. Built on .NET 9 with dependency injection, typed logging, and a Spectre.Console UI.
 
 ## Features
@@ -44,11 +39,11 @@ Example `appsettings.json`:
 - Continue until the primary objective is achieved.
 
 ## Project layout (high level)
-- `StoryGeneratorConsole.csproj` — Console entry point and DI composition
-- `StoryGenerator.Presentation.Console/Program.cs` — UI loop and flow orchestration
-- `StoryGenerator.Application/` — Flow engine and flow contracts/implementations
-- `StoryGenerator.Core/` — Domain models and shared abstractions (if present)
-- `StoryGenerator.AI.Services/` — Integrations (OpenAI, ComfyUI)
+- `StoryGeneratorConsole.csproj` â€” Console entry point and DI composition
+- `StoryGenerator.Presentation.Console/Program.cs` â€” UI loop and flow orchestration
+- `StoryGenerator.Application/` â€” Flow engine and flow contracts/implementations
+- `StoryGenerator.Core/` â€” Domain models and shared abstractions (if present)
+- `StoryGenerator.AI.Services/` â€” Integrations (OpenAI, ComfyUI)
 
 ## Development
 - Build: `dotnet build -c Debug`
@@ -56,9 +51,9 @@ Example `appsettings.json`:
 - Release: `dotnet build -c Release`
 
 Key files:
-- `Program.cs` — Host setup, logging, and main loop
-- `FlowEngine.cs` — Runtime flow registry and execution
-- Flows — `DescriptionFlow`, `BeginStoryFlow`, `ContinueStoryFlow`, `ImageGenerationFlow`
+- `Program.cs` â€” Host setup, logging, and main loop
+- `FlowEngine.cs` â€” Runtime flow registry and execution
+- Flows â€” `DescriptionFlow`, `BeginStoryFlow`, `ContinueStoryFlow`, `ImageGenerationFlow`
 
 ## Troubleshooting
 - Missing API key: Set `OpenAI__ApiKey` or add it to `appsettings.json`.
